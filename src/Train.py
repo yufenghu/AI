@@ -1,36 +1,28 @@
-from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import DummyVecEnv  # Correct import path
 import numpy as np
+from stable_baselines3 import PPO
 from PositionBreakEnv import PositionBreakEnv
 
 
-def train_agent(ms_position=15, exchange_position=20, ms_trades=None, exchange_trades=None):
-    # Create the environment with dynamic positions and trades
-    env = PositionBreakEnv(ms_position=ms_position, exchange_position=exchange_position, ms_trades=ms_trades,
-                           exchange_trades=exchange_trades)
+if __name__ == "__main__":
+    # Example trades:
+    # MS trades: one trade with matchgroup=1
+    ms_trades = np.array([
+        [5, 103, 1, 1, 0],
+        [5, 103, 1, 1, 0],
+        [5, 103, 1, 1, 0]  # qty=10, price=100, not processed, matchgroup=1, balanceID=-1
+    ], dtype=np.float32)
 
-    # Wrap the environment in DummyVecEnv for Stable-Baselines3
-    env = DummyVecEnv([lambda: env])  # Ensure the environment is wrapped
+    # Exchange trades: three trades, two with matchgroup=1, one with balanceID=1
+    exchange_trades = np.array([
+        [5, 103, 1, 1, 0],
+        [10, 103, 1, 1, 0],  #
+        [5, 100, 1, 0, 1]
+    ], dtype=np.float32)
 
-    # Initialize the PPO model
-    model = PPO("MultiInputPolicy", env, verbose=1, tensorboard_log="./ppo_position_break_tensorboard/")
+    env = PositionBreakEnv(ms_position=10.0, exchange_position=15.0,
+                           ms_trades=ms_trades, exchange_trades=exchange_trades, max_ms_trades=3, max_exchange_trades=3)
 
-    # Train the model
-    model.learn(total_timesteps=100000)  # Adjust the number of timesteps as needed
+    model = PPO("MultiInputPolicy", env, verbose=1, n_steps=64, batch_size=64, ent_coef=0.01, learning_rate=0.001, tensorboard_log="./ppo_tensorboard/", device="cuda")
+    model.learn(total_timesteps=120000)
 
-    # Save the trained model
-    model.save(f"ppo_position_break_{ms_position}_{exchange_position}")
-
-    return model
-
-
-# Example: Train with custom MS and Exchange positions, and trades
-ms_trades = np.array([
-            [5, 100], [5, 102], [5, 101]
-        ], dtype=np.float32)
-exchange_trades = np.array([
-            [5, 98], [10, 99], [5, 101]
-        ], dtype=np.float32)
-
-# Train the agent with custom initial positions and trades
-model = train_agent(ms_position=15, exchange_position=20, ms_trades=ms_trades, exchange_trades=exchange_trades)
+    model.save("position_break_model")
