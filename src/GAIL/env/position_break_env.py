@@ -32,13 +32,15 @@ class PositionBreakEnv(gym.Env):
 
         self.initial_ms_position = float(ms_position)
         self.initial_exchange_position = float(exchange_position)
-        self.position_diff = self.initial_ms_position - self.initial_exchange_position
+
 
         if ms_trades is None or exchange_trades is None:
             raise ValueError("ms_trades and exchange_trades must be provided")
 
-        self.ms_trades_actual = ms_trades.astype(np.float32)
-        self.exchange_trades_actual = exchange_trades.astype(np.float32)
+        self.ms_trades_actual = np.array(ms_trades, dtype=np.float32)
+        self.exchange_trades_actual = np.array(exchange_trades, dtype=np.float32)
+        self.initial_ms_trades = self.ms_trades_actual.copy()
+        self.initial_exchange_trades = self.exchange_trades_actual.copy()
 
         # Initialize processed_flag:
         # Set all trades to unprocessed (1 means unprocessed)
@@ -73,7 +75,9 @@ class PositionBreakEnv(gym.Env):
         super().reset(seed=seed)
         self.ms_position = self.initial_ms_position
         self.exchange_position = self.initial_exchange_position
-        self.position_diff = self.ms_position - self.exchange_position
+        self.position_diff = self.initial_ms_position - self.initial_exchange_position
+        self.ms_trades_actual = self.initial_ms_trades.copy()
+        self.exchange_trades_actual = self.initial_exchange_trades.copy()
         self.action_log = []
         return self._get_obs(), {}
 
@@ -112,7 +116,7 @@ class PositionBreakEnv(gym.Env):
         ms_before = self.ms_trades_actual[ms_indices, 2].copy() if ms_indices.any() else np.array([])
         ex_before = self.exchange_trades_actual[exchange_indices, 2].copy() if exchange_indices.any() else np.array([])
 
-        if action_type == 0:
+        if action_type == 1:
             reward = self._match(ms_indices, exchange_indices)
             action_str = "MATCH"
         else:
@@ -151,16 +155,17 @@ class PositionBreakEnv(gym.Env):
                 "position_diff": float(self.position_diff),
                 "done": terminated
             })
+            print(self.action_log[-1])
 
         return self._get_obs(), reward, terminated, truncated, {}
 
     def _match(self, ms_indices, exchange_indices):
         if np.all(ms_indices == False) and np.all(exchange_indices == False):
-            return -1
+            return 0
 
         # If any selected trade is already processed (0), return penalty
         if np.any(self.ms_trades_actual[ms_indices, 2] == 0) or np.any(self.exchange_trades_actual[exchange_indices, 2] == 0):
-            return -1
+            return 0
 
         ms_sel = self.ms_trades_actual[ms_indices]
         ex_sel = self.exchange_trades_actual[exchange_indices]
@@ -174,7 +179,7 @@ class PositionBreakEnv(gym.Env):
 
         # Mark processed trades as 0
         self._mark_processed(ms_sel, ms_indices, ex_sel, exchange_indices)
-        reward = 1
+        reward = 10 * (ms_sel.size + ex_sel.size)
 
         # Check exact matchgroup requirement, ignoring -1
         if ms_sel.size > 0 and ex_sel.size > 0:
@@ -195,21 +200,18 @@ class PositionBreakEnv(gym.Env):
                 all_ex_set = set(all_ex_mg)
 
                 if selected_ms_set == all_ms_set and selected_ex_set == all_ex_set:
-                    reward += 1
+                    reward = reward + 10 * (ms_sel.size + ex_sel.size)
 
         return reward
 
 
-
-
-
     def _balance(self, ms_indices, exchange_indices):
         if np.all(ms_indices == False) and np.all(exchange_indices == False):
-            return -1
+            return 0
 
         # If any selected trade is already processed (0), return penalty
         if np.any(self.ms_trades_actual[ms_indices, 2] == 0) or np.any(self.exchange_trades_actual[exchange_indices, 2] == 0):
-            return -1
+            return 0
 
         ms_sel = self.ms_trades_actual[ms_indices]
         ex_sel = self.exchange_trades_actual[exchange_indices]
@@ -219,13 +221,17 @@ class PositionBreakEnv(gym.Env):
         total_qty_diff = ms_qty - ex_qty
         self.position_diff = self.position_diff - total_qty_diff
 
+        if total_qty_diff == 0:
+            self._mark_processed(ms_sel, ms_indices, ex_sel, exchange_indices)
+            return -100 * (ms_sel.size + ex_sel.size)
+
         if self.position_diff != 0:
             self._mark_processed(ms_sel, ms_indices, ex_sel, exchange_indices)
             return -0.5
 
         # Mark processed trades as 0
         self._mark_processed(ms_sel, ms_indices, ex_sel, exchange_indices)
-        reward = 1
+        reward = 3
 
         # Check exact balanceID requirement, ignoring -1
         if ms_sel.size > 0 and ex_sel.size > 0:

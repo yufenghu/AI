@@ -22,7 +22,7 @@ if __name__ == "__main__":
     env = PositionBreakEnv(ms_position=10.0, exchange_position=15.0,
                            ms_trades=ms_trades, exchange_trades=exchange_trades, max_ms_trades=3, max_exchange_trades=3)
 
-    model = PPO("MultiInputPolicy", env, verbose=1, n_steps=64, batch_size=64, ent_coef=0.01, learning_rate=0.001, tensorboard_log="./ppo_tensorboard/", device="cuda")
-    model.learn(total_timesteps=120000)
+    model = PPO("MultiInputPolicy", env, verbose=1, n_steps=5, batch_size=5, ent_coef=0.9, gamma=0.9,learning_rate=0.005, tensorboard_log="./ppo_tensorboard/", device="cuda")
+    model.learn(total_timesteps=300000)
 
     model.save("position_break_model")
