@@ -39,9 +39,9 @@ def evaluate_policy(policy, env, n_eval_episodes=5):
     print(f"Mean Reward over {n_eval_episodes} episodes: {np.mean(episode_rewards)}")
 
 def main():
-    # scenario = "data/simple_match.json"
+    scenario = "data/simple_match.json"
     # scenario = "data/simple_balance.json"
-    scenario = "data/match_and_balance_test.json"
+    # scenario = "data/match_and_balance_test.json"
 
     policy_path = "models/gail_policy_position_break"
     discriminator_path = "models/gail_discriminator_position_break.pth"

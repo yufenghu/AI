@@ -221,7 +221,7 @@ def main():
 
     # Parameters
     total_scenarios = len(scenarios)
-    episodes_per_scenario = 40
+    episodes_per_scenario = 100
     total_scenarios_to_run = len(scenarios)
     rollout_steps = 20
     policy_steps = 10000
@@ -254,7 +254,7 @@ def main():
     policy = model.policy
 
     # 3. Behavior Cloning Pretraining
-    policy = behavior_cloning_pretrain(policy, expert_obs, expert_actions, device, epochs=10, batch_size=64, lr=1e-3)
+    policy = behavior_cloning_pretrain(policy, expert_obs, expert_actions, device, epochs=130, batch_size=64, lr=1e-3)
     model.policy = policy
 
     # After BC, policy is updated with expert-like behavior.
