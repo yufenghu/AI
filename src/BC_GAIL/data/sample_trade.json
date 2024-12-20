@@ -1,14 +1,12 @@
-
 {
-  "expert_obs": {
-    "ms_trades": [
+  "ms_trades": [
     {
       "qty": 3.0,
       "price": 100.0,
       "unique_id": "ABC123",
       "buy_sell": "B",
       "side": "MS",
-      "trade_label": "Exec",
+      "trade_label": "GI",
       "matchgroup": 1,
       "balanceID": 0,
       "processed_flag": 1
@@ -16,10 +14,12 @@
     {
       "qty": 3.0,
       "price": 100.0,
+      "matchgroup": 1,
+      "balanceID": 0,
       "unique_id": "ABC123",
       "buy_sell": "B",
       "side": "MS",
-      "trade_label": "Exec",
+      "trade_label": "GO",
       "matchgroup": 1,
       "balanceID": 0,
       "processed_flag": 1
@@ -27,8 +27,10 @@
     {
       "qty": 3.0,
       "price": 100.0,
+      "matchgroup": 1,
+      "balanceID": 0,
       "unique_id": "XYZ999",
-      "buy_sell": "B",
+      "buy_sell": "S",
       "side": "MS",
       "trade_label": "Exec",
       "matchgroup": 1,
@@ -36,14 +38,16 @@
       "processed_flag": 1
     }
   ],
-    "exchange_trades": [
+  "exchange_trades": [
     {
       "qty": 3.0,
       "price": 100.0,
+      "matchgroup": 1,
+      "balanceID": 0,
       "unique_id": "ABC123",
-      "buy_sell": "B",
+      "buy_sell": "S",
       "side": "Exchange",
-      "trade_label": "Exec",
+      "trade_label": "GI",
       "matchgroup": 1,
       "balanceID": 0,
       "processed_flag": 1
@@ -51,10 +55,12 @@
     {
       "qty": 3.0,
       "price": 100.0,
+      "matchgroup": 1,
+      "balanceID": 0,
       "unique_id": "ABC123",
-      "buy_sell": "B",
+      "buy_sell": "S",
       "side": "Exchange",
-      "trade_label": "Exec",
+      "trade_label": "GO",
       "matchgroup": 1,
       "balanceID": 0,
       "processed_flag": 1
@@ -62,6 +68,8 @@
     {
       "qty": 3.0,
       "price": 100.0,
+      "matchgroup": 1,
+      "balanceID": 0,
       "unique_id": "XYZ999",
       "buy_sell": "B",
       "side": "Exchange",
@@ -70,27 +78,5 @@
       "balanceID": 0,
       "processed_flag": 1
     }
-  ],
-    "positions": [
-      [
-        15, 15
-      ]
-    ],
-    "position_diff": [
-      [
-        0
-      ]
-    ]
-  },
-  "expert_actions": [
-    [
-      0,
-      1,
-      1,
-      1,
-      1,
-      1,
-      1
-    ]
   ]
 }

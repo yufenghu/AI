@@ -6,20 +6,25 @@ from stable_baselines3.common.vec_env import VecEnvWrapper
 import numpy as np
 from .preprocessing import preprocess_obs
 
-def compute_discriminator_rewards(discriminator, obs, actions, device):
+def compute_discriminator_rewards(discriminator, obs, actions, device, processed_flag_index):
     """
     Compute GAIL rewards and add immediate penalties for invalid actions.
+    Also, if action_type=match and ms_qty != ex_qty, add a penalty.
 
-    Invalid actions:
-      - Choose a processed trade (processed_flag=0 means processed)
-      - Choose no trades at all
-
-    Assuming:
-      action structure: [action_type(1 bit), ms_trades bits, exchange_trades bits]
-      and max_ms_trades=3, max_exchange_trades=3 for example.
-
-    Adjust indexing as needed based on your environment setup.
+    Parameters:
+    -----------
+    discriminator : nn.Module
+        The GAIL discriminator model.
+    obs : dict
+        The observation dictionary as returned by the environment.
+    actions : list or np.ndarray
+        The actions taken.
+    device : torch.device
+        The device (CPU/GPU) used for computation.
+    processed_flag_index : int
+        Index in the trade array where the processed_flag resides.
     """
+
     # Preprocess observations
     states = preprocess_obs(obs)
     for k in states:
@@ -27,7 +32,7 @@ def compute_discriminator_rewards(discriminator, obs, actions, device):
 
     actions_array = np.array(actions)
     if actions_array.ndim == 1:
-        # If we got a single action array, add batch dimension
+        # If single action, add batch dim
         actions_array = actions_array[None, :]
 
     # Move actions to device
@@ -41,80 +46,82 @@ def compute_discriminator_rewards(discriminator, obs, actions, device):
 
         rewards = rewards_tensor.detach().cpu().numpy()
 
-    # Now identify invalid actions:
-    # We need indexing for trades:
-    # Suppose max_ms_trades and max_exchange_trades are known or can be derived
-    # Let's assume them known for simplicity:
+    # Derive indexing from obs:
     max_ms_trades = obs['ms_trades'].shape[1]
     max_exchange_trades = obs['exchange_trades'].shape[1]
 
+    # Action structure (example):
+    # action[0]: action_type (0=match,1=balance,2=forceMatch)
+    # action[1:1+max_ms_trades]: ms trades
+    # action[1+max_ms_trades:...]: exchange trades
+    action_type = actions_array[:,0].astype(int)
     ms_start = 1
     ms_end = ms_start + max_ms_trades
     ex_start = ms_end
     ex_end = ex_start + max_exchange_trades
 
-    # Check processed_flag for trades:
-    # obs['ms_trades'] shape: (n_envs, max_ms_trades, 5)
-    # processed_flag at index 2
-    ms_flags = obs['ms_trades'][:,:,2]  # shape (n_envs, max_ms_trades)
-    ex_flags = obs['exchange_trades'][:,:,2] # shape (n_envs, max_exchange_trades)
+    ms_selected = actions_array[:, ms_start:ms_end]  # (n_envs, max_ms_trades)
+    ex_selected = actions_array[:, ex_start:ex_end]  # (n_envs, max_exchange_trades)
 
-    # ms_flags==1 means unprocessed (good),
-    # ms_flags==0 means processed (bad if selected)
+    # processed_flags from obs:
+    ms_flags = obs['ms_trades'][:, :, processed_flag_index]
+    ex_flags = obs['exchange_trades'][:, :, processed_flag_index]
 
-    # For indexing:
-    n_envs = actions_array.shape[0]
+    # Invalid if selected and processed_flag=0
+    ms_invalid_mask = (ms_selected == 1) & (ms_flags == 0)
+    ex_invalid_mask = (ex_selected == 1) & (ex_flags == 0)
 
-    # Identify selected trades for each env:
-    ms_selected = actions_array[:, ms_start:ms_end] # shape (n_envs, max_ms_trades)
-    ex_selected = actions_array[:, ex_start:ex_end] # shape (n_envs, max_exchange_trades)
-
-    # Check if any processed trade is selected:
-    # processed means flag=0
-    # We have a trade selected if corresponding bit in ms_selected/ex_selected is 1
-    # invalid if selected & processed at the same position
-    # Convert ms_flags, ex_flags to numpy for indexing:
-    ms_flags_np = ms_flags # shape (n_envs, max_ms_trades)
-    ex_flags_np = ex_flags
-
-    # condition: processed_flag=1 means good, so processed=0 means bad
-    # We want to find any selected trade where flag=0
-    # invalid if: ms_selected[i,j]==1 and ms_flags_np[i,j]==0
-    ms_invalid_mask = (ms_selected == 1) & (ms_flags_np == 0)
-    ex_invalid_mask = (ex_selected == 1) & (ex_flags_np == 0)
-
-    # If any processed trade selected, invalid
     processed_invalid = (ms_invalid_mask.any(axis=1)) | (ex_invalid_mask.any(axis=1))
 
-    # Check if no trades selected:
     total_trades_selected = ms_selected.sum(axis=1) + ex_selected.sum(axis=1)
     no_trades_invalid = (total_trades_selected == 0)
 
-    # Combine invalid conditions
     invalid_mask = processed_invalid | no_trades_invalid
 
-    # Apply penalty for invalid actions:
-    # Decide a penalty value:
-    penalty = -10.0  # example large negative penalty
+    # Penalty for invalid actions
+    penalty = -10.0
     rewards[invalid_mask] += penalty
 
-    # Normalization was applied before, but now we changed rewards after that step.
-    # You might choose to skip normalization after applying penalty or re-normalize.
+    # Additional penalty if action_type=match and ms_qty != ex_qty
+    # We must compute ms_qty and ex_qty from obs
+    # qty is at index 0 in trades
+    ms_trades = obs['ms_trades']  # shape (n_envs, max_ms_trades, obs_columns)
+    ex_trades = obs['exchange_trades']
 
-    # If you want to re-normalize after penalty:
-    if rewards.size > 1:
-        std = rewards.std()
-        if std > 1e-8:
-            rewards = (rewards - rewards.mean()) / (std + 1e-8)
+    # Remember observation excludes matchgroup,balanceID but includes processed_flag and original fields
+    # Ensure qty is at index 0 in the obs arrays
+    # If in environment code, qty is guaranteed at index 0 of trades arrays.
+
+    # Compute ms_qty and ex_qty selected:
+    # obs arrays: (n_envs, max_ms_trades, obs_columns)
+    # We must ensure qty is still at index 0 in obs columns used here.
+    # If not sure, we must rely on known indexing from environment logic.
+    # We'll assume qty=0 index is consistent.
+    n_envs = actions_array.shape[0]
+
+    for i in range(n_envs):
+        if action_type[i] == 0:  # match
+            # ms_selected_indices
+            ms_selected_idx = np.where(ms_selected[i]==1)[0]
+            ex_selected_idx = np.where(ex_selected[i]==1)[0]
+
+            ms_qty_selected = obs['ms_trades'][i, ms_selected_idx, 0].sum() if ms_selected_idx.size>0 else 0
+            ex_qty_selected = obs['exchange_trades'][i, ex_selected_idx, 0].sum() if ex_selected_idx.size>0 else 0
+
+            if ms_qty_selected != ex_qty_selected:
+                # Apply penalty if quantities differ
+                rewards[i] += -2  # for example, a smaller penalty than invalid action
+    # Optional: re-normalize or not. Here we skip re-normalization to avoid messing with carefully assigned penalties.
 
     return rewards
 
 
 class GAILRewardWrapper(VecEnvWrapper):
-    def __init__(self, venv, discriminator, device):
+    def __init__(self, venv, discriminator, device, processed_flag_index=2):
         super(GAILRewardWrapper, self).__init__(venv)
         self.discriminator = discriminator
         self.device = device
+        self.processed_flag_index = processed_flag_index
 
     def reset(self):
         obs = self.venv.reset()
@@ -126,7 +133,6 @@ class GAILRewardWrapper(VecEnvWrapper):
     def step_wait(self):
         obs, rewards, dones, infos = self.venv.step_wait()
 
-        # Extract actions from info if needed
         actions = []
         for info in infos:
             act = info.get('action', None)
@@ -134,8 +140,9 @@ class GAILRewardWrapper(VecEnvWrapper):
                 act = self.action_space.sample()
             actions.append(act)
 
-        # Compute GAIL + penalty rewards
-        rewards = compute_discriminator_rewards(self.discriminator, obs, actions, self.device)
+        rewards = compute_discriminator_rewards(
+            self.discriminator, obs, actions, self.device, self.processed_flag_index
+        )
         return obs, rewards, dones, infos
 
     def close(self):
